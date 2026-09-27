@@ -23,3 +23,40 @@ class ScanRequest(BaseModel):
 def scan_domain(request: ScanRequest):
     result = audit_host(request.domain)
     return result
+
+@app.post("/api/export/cbom")
+def export_cbom(request: ScanRequest):
+    result = audit_host(request.domain)
+
+    is_secure = result.get("status") == "SECURE"
+    risk_posture = "Quantum-Resistant" if is_secure else "Vulnerable: Harvest Now, Decrypt Later"
+    nist_status = "Supported" if is_secure else "Not Supported"
+    security_level = "Post-Quantum" if is_secure else "Classical"
+
+    cbom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "version": 1,
+        "metadata": {
+            "timestamp": result.get("timestamp"),
+            "component": {
+                "type": "server",
+                "name": result.get("domain"),
+                "port": result.get("port")
+            }
+        },
+        "components": [
+            {
+                "type": "cryptographic-asset",
+                "name": "TLS Key Exchange",
+                "cryptoProperties": {
+                    "protocolVersion": "TLS 1.3",
+                    "keyAgreementGroup": result.get("group"),
+                    "nistFips203Status": nist_status,
+                    "securityLevel": security_level,
+                    "riskPosture": risk_posture
+                }
+            }
+        ]
+    }
+    return cbom
