@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PQC Sentinel</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin-top: 50px;
+            color: #ffffff;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            font-size: 16px;
+            background-color: #2c2c2c;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .result-card {
+            display: none;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #2c2c2c;
+            margin-top: 20px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .badge.secure {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .badge.vulnerable {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .badge.error {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .details p {
+            margin: 8px 0;
+            color: #ccc;
+        }
+
+        .details strong {
+            color: #fff;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #888;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>PQC Sentinel</h1>
+    <div class="container">
+        <div class="input-group">
+            <input type="text" id="domainInput" placeholder="Enter domain (e.g., google.com)">
+            <button onclick="scanDomain()">Scan for PQC Compliance</button>
+        </div>
+
+        <div id="loading" class="loading">Scanning...</div>
+
+        <div id="resultCard" class="result-card">
+            <div id="statusBadge" class="badge"></div>
+            <div class="details">
+                <p><strong>Domain:</strong> <span id="resDomain"></span></p>
+                <p><strong>Port:</strong> <span id="resPort"></span></p>
+                <p><strong>Key Exchange Group:</strong> <span id="resGroup"></span></p>
+                <p><strong>Posture:</strong> <span id="resPosture"></span></p>
+                <p><strong>Timestamp:</strong> <span id="resTimestamp"></span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function scanDomain() {
+            const domain = document.getElementById('domainInput').value.trim();
+            if (!domain) {
+                alert('Please enter a domain.');
+                return;
+            }
+
+            const resultCard = document.getElementById('resultCard');
+            const loading = document.getElementById('loading');
+            const badge = document.getElementById('statusBadge');
+
+            resultCard.style.display = 'none';
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ domain: domain })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                document.getElementById('resDomain').textContent = data.domain;
+                document.getElementById('resPort').textContent = data.port;
+                document.getElementById('resGroup').textContent = data.group;
+                document.getElementById('resPosture').textContent = data.posture;
+                document.getElementById('resTimestamp').textContent = data.timestamp;
+
+                badge.className = 'badge';
+                if (data.status === 'SECURE') {
+                    badge.textContent = 'SECURE (Post-Quantum Ready)';
+                    badge.classList.add('secure');
+                } else if (data.status === 'VULNERABLE') {
+                    badge.textContent = 'VULNERABLE (Harvest Now, Decrypt Later)';
+                    badge.classList.add('vulnerable');
+                } else {
+                    badge.textContent = data.status || 'ERROR';
+                    badge.classList.add('error');
+                }
+
+                loading.style.display = 'none';
+                resultCard.style.display = 'block';
+
+            } catch (error) {
+                console.error('Error scanning domain:', error);
+                loading.style.display = 'none';
+                alert('An error occurred while scanning the domain.');
+            }
+        }
+    </script>
+</body>
+</html>
