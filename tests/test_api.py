@@ -3,6 +3,12 @@ from app import app
 
 client = TestClient(app)
 
+def test_serve_index():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "PQC Sentinel" in response.text
+
 def test_scan_api():
     response = client.post("/api/scan", json={"domain": "example.com"})
     assert response.status_code == 200
