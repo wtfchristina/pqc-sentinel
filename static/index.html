@@ -178,11 +178,46 @@
                 <span class="detail-value" id="resTimestamp"></span>
             </div>
 
-            <button id="downloadCbomBtn" onclick="downloadCbom()" style="width: 100%; margin-top: 20px; background-color: #28a745;">Download CBOM JSON</button>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="downloadCbomBtn" onclick="downloadCbom()" style="flex: 1; background-color: #28a745;">Download CBOM JSON</button>
+                <button id="downloadPdfBtn" onclick="downloadPdf()" style="flex: 1; background-color: #17a2b8;">Download Executive PDF</button>
+            </div>
         </div>
     </div>
 
     <script>
+        async function downloadPdf() {
+            const domain = document.getElementById('resDomain').textContent;
+            if (!domain) return;
+
+            try {
+                const response = await fetch('/api/export/pdf', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ domain: domain })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate PDF');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `executive-summary-${domain}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Error downloading PDF:', error);
+                alert('An error occurred while downloading the PDF.');
+            }
+        }
+
         async function downloadCbom() {
             const domain = document.getElementById('resDomain').textContent;
             if (!domain) return;

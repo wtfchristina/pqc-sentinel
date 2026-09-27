@@ -24,6 +24,85 @@ def scan_domain(request: ScanRequest):
     result = audit_host(request.domain)
     return result
 
+import io
+from fastapi.responses import Response
+
+@app.post("/api/export/pdf")
+def export_pdf(request: ScanRequest):
+    result = audit_host(request.domain)
+
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import green, red, black, white
+        from reportlab.lib.units import inch
+        import textwrap
+    except ImportError:
+        return Response(content="ReportLab is not installed.", status_code=500)
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Title
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(1 * inch, height - 1 * inch, "PQC Sentinel Executive Summary")
+
+    # 1. Target hostname, scan timestamp, and port.
+    c.setFont("Helvetica", 12)
+    c.drawString(1 * inch, height - 1.5 * inch, f"Target Hostname: {result.get('domain', 'N/A')}")
+    c.drawString(1 * inch, height - 1.75 * inch, f"Port: {result.get('port', 443)}")
+    c.drawString(1 * inch, height - 2 * inch, f"Scan Timestamp: {result.get('timestamp', 'N/A')}")
+
+    # 2. Compliance status badge
+    is_secure = result.get("status") == "SECURE"
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(1 * inch, height - 2.5 * inch, "Compliance Status:")
+
+    if is_secure:
+        c.setFillColor(green)
+        c.rect(1 * inch, height - 3 * inch, 5.5 * inch, 0.4 * inch, fill=1)
+        c.setFillColor(white)
+        c.drawString(1.1 * inch, height - 2.75 * inch, "FIPS 203 Hybrid Post-Quantum Ready")
+    else:
+        c.setFillColor(red)
+        c.rect(1 * inch, height - 3 * inch, 5.5 * inch, 0.4 * inch, fill=1)
+        c.setFillColor(white)
+        c.drawString(1.1 * inch, height - 2.75 * inch, "Non-Compliant / Harvest Now Decrypt Later Risk")
+
+    c.setFillColor(black)
+
+    # 3. Negotiated cipher suite and key exchange group details.
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(1 * inch, height - 3.5 * inch, "Technical Details:")
+    c.setFont("Helvetica", 12)
+    c.drawString(1 * inch, height - 3.75 * inch, f"Key Exchange Group: {result.get('group', 'N/A')}")
+    c.drawString(1 * inch, height - 4.0 * inch, "Cipher Suite: TLS 1.3 (Derived)")
+
+    # 4. Executive recommendation block advising on NIST SP 800-227 migration steps.
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(1 * inch, height - 4.5 * inch, "Executive Recommendation:")
+    c.setFont("Helvetica", 12)
+
+    text = "Based on NIST SP 800-227 guidelines, it is recommended to transition to quantum-resistant cryptography. For non-compliant systems, prioritize updating TLS configurations to support hybrid key exchanges (e.g., X25519MLKEM768) to mitigate 'Harvest Now, Decrypt Later' threats. Ensure all cryptographic assets are inventoried and a migration plan is established."
+    lines = textwrap.wrap(text, width=80)
+
+    y = height - 4.75 * inch
+    for line in lines:
+        c.drawString(1 * inch, y, line)
+        y -= 0.25 * inch
+
+    c.showPage()
+    c.save()
+
+    pdf_bytes = buffer.getvalue()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=executive-summary-{request.domain}.pdf"}
+    )
+
 @app.post("/api/export/cbom")
 def export_cbom(request: ScanRequest):
     result = audit_host(request.domain)

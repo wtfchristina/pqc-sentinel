@@ -50,3 +50,9 @@ def test_export_cbom_api():
     assert crypto_props["nistFips203Status"] in ["Supported", "Not Supported"]
     assert crypto_props["securityLevel"] in ["Post-Quantum", "Classical"]
     assert crypto_props["riskPosture"] in ["Quantum-Resistant", "Vulnerable: Harvest Now, Decrypt Later"]
+
+def test_export_pdf_api():
+    response = client.post("/api/export/pdf", json={"domain": "example.com"})
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF-")
