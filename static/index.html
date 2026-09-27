@@ -177,10 +177,46 @@
                 <span class="detail-label">Timestamp:</span>
                 <span class="detail-value" id="resTimestamp"></span>
             </div>
+
+            <button id="downloadCbomBtn" onclick="downloadCbom()" style="width: 100%; margin-top: 20px; background-color: #28a745;">Download CBOM JSON</button>
         </div>
     </div>
 
     <script>
+        async function downloadCbom() {
+            const domain = document.getElementById('resDomain').textContent;
+            if (!domain) return;
+
+            try {
+                const response = await fetch('/api/export/cbom', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ domain: domain })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate CBOM');
+                }
+
+                const data = await response.json();
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `cbom-${domain}.json`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Error downloading CBOM:', error);
+                alert('An error occurred while downloading the CBOM.');
+            }
+        }
+
         async function scanDomain() {
             const domainInput = document.getElementById('domain');
             const scanBtn = document.getElementById('scanBtn');
