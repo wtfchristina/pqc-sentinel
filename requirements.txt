@@ -5,3 +5,4 @@ httpx
 reportlab
 python-multipart
 python-multipart
+cryptography

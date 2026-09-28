@@ -8,6 +8,8 @@ import csv
 import socket
 import struct
 import sys
+import ssl
+from cryptography import x509
 from datetime import datetime, timezone
 
 # IANA TLS Named Groups
@@ -100,11 +102,19 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
     except Exception as err:
         result["status"] = "FAILED"
         result["posture"] = f"Connection error: {err}"
+        result["leaf_signature_algorithm"] = "Unknown"
+        result["leaf_key_type"] = "Unknown"
+        result["leaf_key_size_bits"] = "Unknown"
+        result["signature_pqc_status"] = "Unknown"
         return result
 
     if len(response) < 5 or response[0] != 0x16:
         result["status"] = "REJECTED"
         result["posture"] = "No TLS Handshake record returned"
+        result["leaf_signature_algorithm"] = "Unknown"
+        result["leaf_key_type"] = "Unknown"
+        result["leaf_key_size_bits"] = "Unknown"
+        result["signature_pqc_status"] = "Unknown"
         return result
 
     idx = response.find(b"\x00\x33")
@@ -112,6 +122,10 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
         result["status"] = "VULNERABLE"
         result["group"] = "Legacy / Non-PQC"
         result["posture"] = "Classical exchange only (Harvest Now, Decrypt Later)"
+        result["leaf_signature_algorithm"] = "Unknown"
+        result["leaf_key_type"] = "Unknown"
+        result["leaf_key_size_bits"] = "Unknown"
+        result["signature_pqc_status"] = "Unknown"
         return result
 
     group_id = struct.unpack("!H", response[idx + 4 : idx + 6])[0]
@@ -124,6 +138,60 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
     else:
         result["status"] = "VULNERABLE"
         result["posture"] = "Classical key exchange in use (Vulnerable)"
+
+    # Certificate Chain Retrieval
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    leaf_signature_algorithm = "Unknown"
+    leaf_key_type = "Unknown"
+    leaf_key_size_bits = "Unknown"
+    signature_pqc_status = "Unknown"
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric import rsa, ec, dsa, ed25519, ed448, x25519, x448
+        with socket.create_connection((hostname, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert_der = ssock.getpeercert(binary_form=True)
+                if cert_der:
+                    cert = x509.load_der_x509_certificate(cert_der)
+                    leaf_signature_algorithm = cert.signature_algorithm_oid._name
+                    pub_key = cert.public_key()
+
+                    if isinstance(pub_key, ec.EllipticCurvePublicKey):
+                        leaf_key_type = "ECDSA"
+                    elif isinstance(pub_key, rsa.RSAPublicKey):
+                        leaf_key_type = "RSA"
+                    elif isinstance(pub_key, dsa.DSAPublicKey):
+                        leaf_key_type = "DSA"
+                    elif isinstance(pub_key, ed25519.Ed25519PublicKey):
+                        leaf_key_type = "Ed25519"
+                    elif isinstance(pub_key, ed448.Ed448PublicKey):
+                        leaf_key_type = "Ed448"
+                    elif isinstance(pub_key, x25519.X25519PublicKey):
+                        leaf_key_type = "X25519"
+                    elif isinstance(pub_key, x448.X448PublicKey):
+                        leaf_key_type = "X448"
+                    else:
+                        leaf_key_type = pub_key.__class__.__name__
+
+                    try:
+                        leaf_key_size_bits = pub_key.key_size
+                    except AttributeError:
+                        leaf_key_size_bits = "Unknown"
+
+                    if "mldsa" in leaf_signature_algorithm.lower() or "slh-dsa" in leaf_signature_algorithm.lower():
+                        signature_pqc_status = "Post-Quantum Signature Ready"
+                    else:
+                        signature_pqc_status = "Classical / Vulnerable to Shor's Algorithm (RSA, ECDSA)"
+    except Exception as e:
+        pass
+
+    result["leaf_signature_algorithm"] = leaf_signature_algorithm
+    result["leaf_key_type"] = leaf_key_type
+    result["leaf_key_size_bits"] = leaf_key_size_bits
+    result["signature_pqc_status"] = signature_pqc_status
 
     return result
 
@@ -172,7 +240,7 @@ def main():
 
     # Save to CSV
     with open(csv_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["domain", "port", "status", "group", "posture", "timestamp"])
+        writer = csv.DictWriter(f, fieldnames=["domain", "port", "status", "group", "posture", "timestamp", "leaf_signature_algorithm", "leaf_key_type", "leaf_key_size_bits", "signature_pqc_status"])
         writer.writeheader()
         writer.writerows(results)
 

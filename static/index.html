@@ -268,6 +268,26 @@
                     <span class="detail-value" id="resTimestamp"></span>
                 </div>
 
+                <div class="detail" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                    <strong>Certificate Signature:</strong>
+                </div>
+                <div class="detail">
+                    <span class="detail-label">Algorithm:</span>
+                    <span class="detail-value" id="resSigAlg"></span>
+                </div>
+                <div class="detail">
+                    <span class="detail-label">Key Type:</span>
+                    <span class="detail-value" id="resKeyType"></span>
+                </div>
+                <div class="detail">
+                    <span class="detail-label">Key Size:</span>
+                    <span class="detail-value" id="resKeySize"></span>
+                </div>
+                <div class="detail">
+                    <span class="detail-label">Posture:</span>
+                    <span class="detail-value" id="resSigPosture"></span>
+                </div>
+
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button id="downloadCbomBtn" onclick="downloadCbom()" style="flex: 1; background-color: #28a745;">Download CBOM JSON</button>
                     <button id="downloadPdfBtn" onclick="downloadPdf()" style="flex: 1; background-color: #17a2b8;">Download Executive PDF</button>
@@ -294,6 +314,7 @@ google.com)"></textarea>
                             <th>Domain</th>
                             <th>Status</th>
                             <th>Key Exchange Group</th>
+                            <th>Signature Algorithm</th>
                             <th>Timestamp</th>
                         </tr>
                     </thead>
@@ -397,12 +418,16 @@ google.com)"></textarea>
                     const tdGroup = document.createElement('td');
                     tdGroup.textContent = res.group;
 
+                    const tdSigAlg = document.createElement('td');
+                    tdSigAlg.textContent = res.leaf_signature_algorithm || 'N/A';
+
                     const tdTimestamp = document.createElement('td');
                     tdTimestamp.textContent = new Date(res.timestamp).toLocaleString();
 
                     tr.appendChild(tdDomain);
                     tr.appendChild(tdStatus);
                     tr.appendChild(tdGroup);
+                    tr.appendChild(tdSigAlg);
                     tr.appendChild(tdTimestamp);
 
                     tbody.appendChild(tr);
@@ -575,6 +600,12 @@ google.com)"></textarea>
 
                 let date = new Date(data.timestamp);
                 document.getElementById('resTimestamp').textContent = date.toLocaleString();
+
+                // Update Signature fields
+                document.getElementById('resSigAlg').textContent = data.leaf_signature_algorithm || 'N/A';
+                document.getElementById('resKeyType').textContent = data.leaf_key_type || 'N/A';
+                document.getElementById('resKeySize').textContent = data.leaf_key_size_bits || 'N/A';
+                document.getElementById('resSigPosture').textContent = data.signature_pqc_status || 'N/A';
 
                 // Update Badge
                 badge.className = 'badge'; // reset
