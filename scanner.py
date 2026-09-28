@@ -150,6 +150,7 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
     signature_pqc_status = "Unknown"
 
     try:
+        from cryptography.hazmat.primitives.asymmetric import rsa, ec, dsa, ed25519, ed448, x25519, x448
         with socket.create_connection((hostname, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert_der = ssock.getpeercert(binary_form=True)
@@ -157,13 +158,28 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
                     cert = x509.load_der_x509_certificate(cert_der)
                     leaf_signature_algorithm = cert.signature_algorithm_oid._name
                     pub_key = cert.public_key()
-                    leaf_key_type = pub_key.__class__.__name__
-                    if leaf_key_type == "ECPublicKey":
-                        leaf_key_type = "ECDSA"
-                    elif leaf_key_type == "RSAPublicKey":
-                        leaf_key_type = "RSA"
 
-                    leaf_key_size_bits = pub_key.key_size
+                    if isinstance(pub_key, ec.EllipticCurvePublicKey):
+                        leaf_key_type = "ECDSA"
+                    elif isinstance(pub_key, rsa.RSAPublicKey):
+                        leaf_key_type = "RSA"
+                    elif isinstance(pub_key, dsa.DSAPublicKey):
+                        leaf_key_type = "DSA"
+                    elif isinstance(pub_key, ed25519.Ed25519PublicKey):
+                        leaf_key_type = "Ed25519"
+                    elif isinstance(pub_key, ed448.Ed448PublicKey):
+                        leaf_key_type = "Ed448"
+                    elif isinstance(pub_key, x25519.X25519PublicKey):
+                        leaf_key_type = "X25519"
+                    elif isinstance(pub_key, x448.X448PublicKey):
+                        leaf_key_type = "X448"
+                    else:
+                        leaf_key_type = pub_key.__class__.__name__
+
+                    try:
+                        leaf_key_size_bits = pub_key.key_size
+                    except AttributeError:
+                        leaf_key_size_bits = "Unknown"
 
                     if "mldsa" in leaf_signature_algorithm.lower() or "slh-dsa" in leaf_signature_algorithm.lower():
                         signature_pqc_status = "Post-Quantum Signature Ready"
