@@ -98,16 +98,17 @@ def export_pdf(request: ScanRequest):
     c.setFont("Helvetica", 12)
     c.drawString(1 * inch, height - 3.75 * inch, f"Key Exchange Group: {result.get('group', 'N/A')}")
     c.drawString(1 * inch, height - 4.0 * inch, "Cipher Suite: TLS 1.3 (Derived)")
+    c.drawString(1 * inch, height - 4.25 * inch, f"Certificate Signature Algorithm: {result.get('leaf_signature_algorithm', 'N/A')} ({result.get('signature_pqc_status', 'N/A')})")
 
     # 4. Executive recommendation block advising on NIST SP 800-227 migration steps.
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(1 * inch, height - 4.5 * inch, "Executive Recommendation:")
+    c.drawString(1 * inch, height - 4.75 * inch, "Executive Recommendation:")
     c.setFont("Helvetica", 12)
 
     text = "Based on NIST SP 800-227 guidelines, it is recommended to transition to quantum-resistant cryptography. For non-compliant systems, prioritize updating TLS configurations to support hybrid key exchanges (e.g., X25519MLKEM768) to mitigate 'Harvest Now, Decrypt Later' threats. Ensure all cryptographic assets are inventoried and a migration plan is established."
     lines = textwrap.wrap(text, width=80)
 
-    y = height - 4.75 * inch
+    y = height - 5.0 * inch
     for line in lines:
         c.drawString(1 * inch, y, line)
         y -= 0.25 * inch
@@ -154,6 +155,14 @@ def export_cbom(request: ScanRequest):
                     "nistFips203Status": nist_status,
                     "securityLevel": security_level,
                     "riskPosture": risk_posture
+                }
+            },
+            {
+                "type": "cryptographic-asset",
+                "name": "Certificate Signature Algorithm",
+                "cryptoProperties": {
+                    "algorithm": result.get("leaf_signature_algorithm", "Unknown"),
+                    "nistFips204_205Status": result.get("signature_pqc_status", "Unknown")
                 }
             }
         ]

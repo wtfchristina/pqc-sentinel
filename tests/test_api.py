@@ -19,6 +19,10 @@ def test_scan_api():
     assert "group" in data
     assert "posture" in data
     assert "timestamp" in data
+    assert "leaf_signature_algorithm" in data
+    assert "leaf_key_type" in data
+    assert "leaf_key_size_bits" in data
+    assert "signature_pqc_status" in data
 
 def test_export_cbom_api():
     response = client.post("/api/export/cbom", json={"domain": "example.com"})
@@ -38,7 +42,7 @@ def test_export_cbom_api():
 
     # Check components
     components = cbom["components"]
-    assert len(components) == 1
+    assert len(components) == 2
 
     crypto_asset = components[0]
     assert crypto_asset["type"] == "cryptographic-asset"
@@ -50,6 +54,14 @@ def test_export_cbom_api():
     assert crypto_props["nistFips203Status"] in ["Supported", "Not Supported"]
     assert crypto_props["securityLevel"] in ["Post-Quantum", "Classical"]
     assert crypto_props["riskPosture"] in ["Quantum-Resistant", "Vulnerable: Harvest Now, Decrypt Later"]
+
+    sig_asset = components[1]
+    assert sig_asset["type"] == "cryptographic-asset"
+    assert sig_asset["name"] == "Certificate Signature Algorithm"
+
+    sig_props = sig_asset["cryptoProperties"]
+    assert "algorithm" in sig_props
+    assert "nistFips204_205Status" in sig_props
 
 def test_export_pdf_api():
     response = client.post("/api/export/pdf", json={"domain": "example.com"})
@@ -72,6 +84,10 @@ def test_scan_batch_api():
     assert "group" in item
     assert "posture" in item
     assert "timestamp" in item
+    assert "leaf_signature_algorithm" in item
+    assert "leaf_key_type" in item
+    assert "leaf_key_size_bits" in item
+    assert "signature_pqc_status" in item
 
     # Check structure of the second item
     item2 = data[1]
@@ -80,3 +96,7 @@ def test_scan_batch_api():
     assert "group" in item2
     assert "posture" in item2
     assert "timestamp" in item2
+    assert "leaf_signature_algorithm" in item2
+    assert "leaf_key_type" in item2
+    assert "leaf_key_size_bits" in item2
+    assert "signature_pqc_status" in item2
