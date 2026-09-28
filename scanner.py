@@ -1,3 +1,4 @@
+import asyncio
 """
 PQC Sentinel: TLS 1.3 Post-Quantum Compliance & Audit Scanner
 Supports single targets or batch audits from a text file, exporting to CSV.
@@ -126,6 +127,14 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
 
     return result
 
+
+
+async def audit_host_async(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
+    return await asyncio.to_thread(audit_host, hostname, port, timeout)
+
+async def audit_hosts_concurrent(domains: list[str]) -> list[dict]:
+    tasks = [audit_host_async(domain) for domain in domains]
+    return await asyncio.gather(*tasks)
 
 def main():
     if len(sys.argv) < 2:

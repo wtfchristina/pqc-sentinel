@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+import re
 from pydantic import BaseModel
-from scanner import audit_host
+from scanner import audit_host, audit_hosts_concurrent
 import os
 
 app = FastAPI(title="PQC Sentinel API")
@@ -18,6 +19,25 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class ScanRequest(BaseModel):
     domain: str
+
+class BatchScanRequest(BaseModel):
+    domains: list[str]
+
+@app.post("/api/scan/batch")
+async def scan_batch(request: BatchScanRequest):
+    results = await audit_hosts_concurrent(request.domains)
+    return results
+
+@app.post("/api/scan/upload")
+async def scan_upload(file: UploadFile = File(...)):
+    content = await file.read()
+    text = content.decode("utf-8")
+    # Split by lines or commas
+
+    raw_domains = re.split(r'[\n,]', text)
+    domains = [d.strip() for d in raw_domains if d.strip()]
+    results = await audit_hosts_concurrent(domains)
+    return results
 
 @app.post("/api/scan")
 def scan_domain(request: ScanRequest):

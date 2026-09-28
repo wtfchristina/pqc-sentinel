@@ -56,3 +56,27 @@ def test_export_pdf_api():
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-")
+
+def test_scan_batch_api():
+    response = client.post("/api/scan/batch", json={"domains": ["example.com", "test.com"]})
+    assert response.status_code == 200
+
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) == 2
+
+    # Check structure of the first item
+    item = data[0]
+    assert item["domain"] == "example.com"
+    assert "status" in item
+    assert "group" in item
+    assert "posture" in item
+    assert "timestamp" in item
+
+    # Check structure of the second item
+    item2 = data[1]
+    assert item2["domain"] == "test.com"
+    assert "status" in item2
+    assert "group" in item2
+    assert "posture" in item2
+    assert "timestamp" in item2
