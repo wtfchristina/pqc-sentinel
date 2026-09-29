@@ -9,11 +9,14 @@ import os
 from contextlib import asynccontextmanager
 from database import init_db, get_db
 from alerts import send_drift_alert
+from scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    start_scheduler(_internal_run_monitor_check)
     yield
+    stop_scheduler()
 
 app = FastAPI(title="PQC Sentinel API", lifespan=lifespan)
 
@@ -106,8 +109,7 @@ def delete_monitor_target(target_id: int):
     conn.close()
     return {"message": "Domain removed from monitoring"}
 
-@app.post("/api/monitor/run-check")
-async def run_monitor_check():
+async def _internal_run_monitor_check():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, domain, webhook_url, last_status, last_signature_algorithm FROM monitored_domains WHERE is_active = 1")
@@ -171,6 +173,19 @@ async def run_monitor_check():
     conn.close()
 
     return {"message": "Monitor check completed", "targets_checked": len(targets), "alerts_triggered": alerts_triggered}
+
+@app.get("/api/monitor/scheduler-status")
+def get_monitor_scheduler_status():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT count(*) FROM monitored_domains WHERE is_active = 1")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return get_scheduler_status(total_monitored_domains=count)
+
+@app.post("/api/monitor/run-check")
+async def run_monitor_check():
+    return await _internal_run_monitor_check()
 
 import io
 from fastapi.responses import Response
