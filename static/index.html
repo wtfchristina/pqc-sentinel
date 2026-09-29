@@ -235,6 +235,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('single')">Single Scan</button>
             <button class="tab" onclick="switchTab('batch')">Batch Scan</button>
+            <button class="tab" onclick="switchTab('monitor')">Continuous Monitoring & Alerts</button>
         </div>
 
         <div id="single-tab" class="tab-content active">
@@ -327,6 +328,40 @@ google.com)"></textarea>
             </div>
         </div>
 
+        <div id="monitor-tab" class="tab-content">
+            <h2>Continuous Monitoring & Alerts</h2>
+            <p style="color: #bbb; margin-bottom: 20px;">Monitor domains for posture degradation (e.g., SECURE to VULNERABLE).</p>
+
+            <div class="search-container" style="flex-wrap: wrap;">
+                <input type="text" id="monitorDomain" placeholder="Enter domain (e.g., cloudflare.com)" style="flex: 1; margin-right: 10px; margin-bottom: 10px; min-width: 200px; padding: 12px; border-radius: 6px; border: 1px solid #444; background-color: #2b2b2b; color: #fff;">
+                <input type="text" id="monitorWebhook" placeholder="Optional Webhook URL (Slack/Discord)" style="flex: 2; margin-right: 10px; margin-bottom: 10px; min-width: 200px; padding: 12px; border-radius: 6px; border: 1px solid #444; background-color: #2b2b2b; color: #fff;">
+                <button onclick="addMonitoredTarget()" style="margin-bottom: 10px;">Add to Watchlist</button>
+            </div>
+
+            <div style="margin-bottom: 20px; text-align: left; margin-top: 20px;">
+                <button onclick="runAuditCheck()" id="runCheckBtn" style="background-color: #f39c12;">Run Audit Now</button>
+                <span id="monitorLoading" style="display: none; margin-left: 10px; color: #f39c12;">Running checks...</span>
+            </div>
+
+            <div class="table-container" style="overflow-x: auto;">
+                <table id="monitorTable" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                    <thead>
+                        <tr>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Domain</th>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Current Posture</th>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Signature Alg</th>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Webhook</th>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Last Checked</th>
+                            <th style="text-align: left; padding: 10px; border-bottom: 1px solid #444;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="monitorTbody">
+                        <!-- Monitoring results injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
     </div>
 
@@ -341,9 +376,152 @@ google.com)"></textarea>
             if (tab === 'single') {
                 document.querySelectorAll('.tab')[0].classList.add('active');
                 document.getElementById('single-tab').classList.add('active');
-            } else {
+            } else if (tab === 'batch') {
                 document.querySelectorAll('.tab')[1].classList.add('active');
                 document.getElementById('batch-tab').classList.add('active');
+            } else if (tab === 'monitor') {
+                document.querySelectorAll('.tab')[2].classList.add('active');
+                document.getElementById('monitor-tab').classList.add('active');
+                fetchTargets();
+            }
+        }
+
+        async function fetchTargets() {
+            try {
+                const response = await fetch('/api/monitor/targets');
+                if (!response.ok) throw new Error('Failed to fetch targets');
+                const targets = await response.json();
+
+                const tbody = document.getElementById('monitorTbody');
+                tbody.innerHTML = '';
+
+                if (targets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 10px;">No monitored domains yet.</td></tr>';
+                    return;
+                }
+
+                targets.forEach(t => {
+                    const tr = document.createElement('tr');
+
+                    const tdDomain = document.createElement('td');
+                    tdDomain.style.padding = '10px';
+                    tdDomain.style.borderBottom = '1px solid #333';
+                    tdDomain.textContent = t.domain;
+
+                    const tdPosture = document.createElement('td');
+                    tdPosture.style.padding = '10px';
+                    tdPosture.style.borderBottom = '1px solid #333';
+                    const spanStatus = document.createElement('span');
+                    spanStatus.classList.add('badge-small');
+                    if (t.last_status === 'SECURE') {
+                        spanStatus.textContent = 'SECURE';
+                        spanStatus.classList.add('secure');
+                    } else if (t.last_status === 'VULNERABLE') {
+                        spanStatus.textContent = 'VULNERABLE';
+                        spanStatus.classList.add('vulnerable');
+                    } else {
+                        spanStatus.textContent = t.last_status || 'UNKNOWN';
+                        spanStatus.classList.add('error');
+                    }
+                    tdPosture.appendChild(spanStatus);
+
+                    const tdSigAlg = document.createElement('td');
+                    tdSigAlg.style.padding = '10px';
+                    tdSigAlg.style.borderBottom = '1px solid #333';
+                    tdSigAlg.textContent = t.last_signature_algorithm || 'N/A';
+
+                    const tdWebhook = document.createElement('td');
+                    tdWebhook.style.padding = '10px';
+                    tdWebhook.style.borderBottom = '1px solid #333';
+                    tdWebhook.textContent = t.webhook_url ? 'Yes' : 'No';
+
+                    const tdLastChecked = document.createElement('td');
+                    tdLastChecked.style.padding = '10px';
+                    tdLastChecked.style.borderBottom = '1px solid #333';
+                    tdLastChecked.textContent = t.last_scanned_at ? new Date(t.last_scanned_at + 'Z').toLocaleString() : 'Never';
+
+                    const tdActions = document.createElement('td');
+                    tdActions.style.padding = '10px';
+                    tdActions.style.borderBottom = '1px solid #333';
+                    const delBtn = document.createElement('button');
+                    delBtn.textContent = 'Remove';
+                    delBtn.style.padding = '5px 10px';
+                    delBtn.style.backgroundColor = '#e74c3c';
+                    delBtn.style.fontSize = '12px';
+                    delBtn.onclick = () => deleteTarget(t.id);
+                    tdActions.appendChild(delBtn);
+
+                    tr.appendChild(tdDomain);
+                    tr.appendChild(tdPosture);
+                    tr.appendChild(tdSigAlg);
+                    tr.appendChild(tdWebhook);
+                    tr.appendChild(tdLastChecked);
+                    tr.appendChild(tdActions);
+
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        async function addMonitoredTarget() {
+            const domain = document.getElementById('monitorDomain').value.trim();
+            const webhookUrl = document.getElementById('monitorWebhook').value.trim();
+
+            if (!domain) {
+                alert('Domain is required');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/monitor/targets', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ domain: domain, webhook_url: webhookUrl || null })
+                });
+
+                if (!response.ok) throw new Error('Failed to add target');
+
+                document.getElementById('monitorDomain').value = '';
+                document.getElementById('monitorWebhook').value = '';
+                fetchTargets();
+            } catch (error) {
+                console.error(error);
+                alert('Error adding target');
+            }
+        }
+
+        async function deleteTarget(id) {
+            try {
+                const response = await fetch(`/api/monitor/targets/${id}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to delete target');
+                fetchTargets();
+            } catch (error) {
+                console.error(error);
+                alert('Error deleting target');
+            }
+        }
+
+        async function runAuditCheck() {
+            const btn = document.getElementById('runCheckBtn');
+            const loading = document.getElementById('monitorLoading');
+
+            btn.disabled = true;
+            loading.style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/api/monitor/run-check', { method: 'POST' });
+                if (!response.ok) throw new Error('Failed to run check');
+                const res = await response.json();
+                alert(`Check completed! Checked ${res.targets_checked} targets, ${res.alerts_triggered} alerts triggered.`);
+                fetchTargets();
+            } catch (error) {
+                console.error(error);
+                alert('Error running audit check');
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
             }
         }
 

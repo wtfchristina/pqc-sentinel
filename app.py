@@ -1,12 +1,21 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import re
 from pydantic import BaseModel
+from typing import Optional
 from scanner import audit_host, audit_hosts_concurrent
 import os
+from contextlib import asynccontextmanager
+from database import init_db, get_db
+from alerts import send_drift_alert
 
-app = FastAPI(title="PQC Sentinel API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+app = FastAPI(title="PQC Sentinel API", lifespan=lifespan)
 
 # Serve the static UI on the root path
 @app.get("/", response_class=HTMLResponse)
@@ -43,6 +52,125 @@ async def scan_upload(file: UploadFile = File(...)):
 def scan_domain(request: ScanRequest):
     result = audit_host(request.domain)
     return result
+
+class MonitorTarget(BaseModel):
+    domain: str
+    webhook_url: Optional[str] = None
+
+@app.post("/api/monitor/targets")
+def add_monitor_target(target: MonitorTarget):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO monitored_domains (domain, webhook_url) VALUES (?, ?)",
+        (target.domain, target.webhook_url)
+    )
+    conn.commit()
+    target_id = cursor.lastrowid
+    conn.close()
+    return {"id": target_id, "message": "Domain added to monitoring"}
+
+@app.get("/api/monitor/targets")
+def get_monitor_targets():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, domain, port, last_status, last_group, last_signature_algorithm,
+               webhook_url, is_active, created_at, last_scanned_at
+        FROM monitored_domains WHERE is_active = 1
+    """)
+    rows = cursor.fetchall()
+
+    # Also fetch recent history for each
+    targets = []
+    for row in rows:
+        target = dict(row)
+        cursor.execute("""
+            SELECT status, "group", leaf_signature_algorithm, signature_pqc_status, timestamp
+            FROM audit_history
+            WHERE domain_id = ?
+            ORDER BY timestamp DESC LIMIT 5
+        """, (target["id"],))
+        target["history"] = [dict(h) for h in cursor.fetchall()]
+        targets.append(target)
+
+    conn.close()
+    return targets
+
+@app.delete("/api/monitor/targets/{target_id}")
+def delete_monitor_target(target_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE monitored_domains SET is_active = 0 WHERE id = ?", (target_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "Domain removed from monitoring"}
+
+@app.post("/api/monitor/run-check")
+async def run_monitor_check():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, domain, webhook_url, last_status, last_signature_algorithm FROM monitored_domains WHERE is_active = 1")
+    targets = cursor.fetchall()
+
+    if not targets:
+        conn.close()
+        return {"message": "No active targets to monitor."}
+
+    domains = [t["domain"] for t in targets]
+    results = await audit_hosts_concurrent(domains)
+
+    alerts_triggered = 0
+
+    for target, result in zip(targets, results):
+        domain_id = target["id"]
+        webhook_url = target["webhook_url"]
+        prev_status = target["last_status"]
+        prev_sig_alg = target["last_signature_algorithm"]
+
+        curr_status = result.get("status")
+        curr_group = result.get("group")
+        curr_sig_alg = result.get("leaf_signature_algorithm")
+        curr_sig_pqc = result.get("signature_pqc_status")
+
+        # Insert history
+        cursor.execute("""
+            INSERT INTO audit_history (domain_id, status, "group", leaf_signature_algorithm, signature_pqc_status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (domain_id, curr_status, curr_group, curr_sig_alg, curr_sig_pqc))
+
+        # Update monitored domain
+        cursor.execute("""
+            UPDATE monitored_domains
+            SET last_status = ?, last_group = ?, last_signature_algorithm = ?, last_scanned_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (curr_status, curr_group, curr_sig_alg, domain_id))
+
+        # Check for drift
+        drift_reasons = []
+        if prev_status == "SECURE" and curr_status == "VULNERABLE":
+            drift_reasons.append("Status regressed from SECURE to VULNERABLE.")
+
+        if prev_sig_alg and prev_sig_alg != curr_sig_alg:
+            # Simple heuristic for weakening: going from a PQC sig to classical
+            if "mldsa" in prev_sig_alg.lower() and "mldsa" not in curr_sig_alg.lower():
+                 drift_reasons.append(f"Signature algorithm weakened from {prev_sig_alg} to {curr_sig_alg}.")
+
+        if drift_reasons and webhook_url:
+            alert_payload = {
+                "text": f"PQC Drift Alert for {target['domain']}",
+                "domain": target['domain'],
+                "reasons": drift_reasons,
+                "previous_status": prev_status,
+                "current_status": curr_status
+            }
+            await send_drift_alert(webhook_url, alert_payload)
+            alerts_triggered += 1
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Monitor check completed", "targets_checked": len(targets), "alerts_triggered": alerts_triggered}
 
 import io
 from fastapi.responses import Response

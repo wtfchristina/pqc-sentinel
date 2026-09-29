@@ -2,3 +2,6 @@ __pycache__/
 *.csv
 .DS_Store
 .venv/
+pqc_sentinel.db
+uvicorn.log
+pqc_sentinel_test.db
