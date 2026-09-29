@@ -100,3 +100,96 @@ def test_scan_batch_api():
     assert "leaf_key_type" in item2
     assert "leaf_key_size_bits" in item2
     assert "signature_pqc_status" in item2
+
+import os
+from database import init_db, get_db
+
+# Initialize a test DB
+os.environ["PQC_SENTINEL_DB_PATH"] = "pqc_sentinel_test.db"
+if os.path.exists("pqc_sentinel_test.db"):
+    os.remove("pqc_sentinel_test.db")
+init_db()
+
+def test_add_target():
+    response = client.post("/api/monitor/targets", json={"domain": "example.com", "webhook_url": "http://test.webhook"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "id" in data
+    assert data["message"] == "Domain added to monitoring"
+
+def test_list_targets():
+    response = client.get("/api/monitor/targets")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    # Check that "example.com" is in the results
+    assert any(t["domain"] == "example.com" for t in data)
+
+def test_delete_target():
+    # First, get the id
+    response = client.get("/api/monitor/targets")
+    data = response.json()
+    target_id = data[0]["id"]
+
+    # Delete it
+    response = client.delete(f"/api/monitor/targets/{target_id}")
+    assert response.status_code == 200
+    assert response.json()["message"] == "Domain removed from monitoring"
+
+    # Verify it's gone
+    response = client.get("/api/monitor/targets")
+    data = response.json()
+    # It should not contain the deleted target
+    assert not any(t["id"] == target_id for t in data)
+
+from unittest.mock import patch
+
+@patch("alerts.httpx.AsyncClient.post")
+def test_run_check_with_drift(mock_post):
+    # Setup test DB specifically for drift check
+    conn = get_db()
+    cursor = conn.cursor()
+    # Add a target that was SECURE and has a PQC sig
+    cursor.execute("""
+        INSERT INTO monitored_domains (domain, webhook_url, is_active, last_status, last_signature_algorithm)
+        VALUES (?, ?, 1, ?, ?)
+    """, ("test-drift.com", "http://test.webhook", "SECURE", "mldsa44"))
+    conn.commit()
+    conn.close()
+
+    # We mock the actual scanner to simulate a regression
+    with patch("app.audit_hosts_concurrent") as mock_audit:
+        import asyncio
+        # Provide results matching the number of active targets
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT count(*) FROM monitored_domains WHERE is_active = 1")
+        count = cursor.fetchone()[0]
+        conn.close()
+
+        # Simulate result where it regressed to VULNERABLE and classical sig for all
+        mock_audit.return_value = [{"status": "VULNERABLE", "group": "Legacy", "leaf_signature_algorithm": "ecdsa-with-SHA256", "signature_pqc_status": "Classical"} for _ in range(count)]
+
+        # To avoid the coroutine warning from the mock, we can mock raise_for_status
+        from unittest.mock import AsyncMock
+        mock_post.return_value = AsyncMock()
+        mock_post.return_value.raise_for_status = lambda: None
+
+        response = client.post("/api/monitor/run-check")
+        assert response.status_code == 200
+
+        # Verify the webhook was called because of drift
+        assert mock_post.call_count >= 1
+
+        # We find the specific call for our drift target
+        drift_call = None
+        for call in mock_post.mock_calls:
+            if call.kwargs and "json" in call.kwargs:
+                if call.kwargs["json"].get("domain") == "test-drift.com":
+                    drift_call = call
+                    break
+
+        assert drift_call is not None
+        payload = drift_call.kwargs["json"]
+        assert "Status regressed from SECURE to VULNERABLE." in payload["reasons"]
