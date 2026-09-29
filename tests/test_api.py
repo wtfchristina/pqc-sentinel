@@ -193,3 +193,15 @@ def test_run_check_with_drift(mock_post):
         assert drift_call is not None
         payload = drift_call.kwargs["json"]
         assert "Status regressed from SECURE to VULNERABLE." in payload["reasons"]
+
+def test_scheduler_status():
+    response = client.get("/api/monitor/scheduler-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "scheduler_running" in data
+    assert "next_run_time" in data
+    assert "interval_hours" in data
+    assert "total_monitored_domains" in data
+    assert isinstance(data["scheduler_running"], bool)
+    assert isinstance(data["interval_hours"], int)
+    assert isinstance(data["total_monitored_domains"], int)
