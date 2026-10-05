@@ -123,6 +123,8 @@ async def _internal_run_monitor_check():
     results = await audit_hosts_concurrent(domains)
 
     alerts_triggered = 0
+    history_inserts = []
+    domain_updates = []
 
     for target, result in zip(targets, results):
         domain_id = target["id"]
@@ -135,18 +137,8 @@ async def _internal_run_monitor_check():
         curr_sig_alg = result.get("leaf_signature_algorithm")
         curr_sig_pqc = result.get("signature_pqc_status")
 
-        # Insert history
-        cursor.execute("""
-            INSERT INTO audit_history (domain_id, status, "group", leaf_signature_algorithm, signature_pqc_status)
-            VALUES (?, ?, ?, ?, ?)
-        """, (domain_id, curr_status, curr_group, curr_sig_alg, curr_sig_pqc))
-
-        # Update monitored domain
-        cursor.execute("""
-            UPDATE monitored_domains
-            SET last_status = ?, last_group = ?, last_signature_algorithm = ?, last_scanned_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (curr_status, curr_group, curr_sig_alg, domain_id))
+        history_inserts.append((domain_id, curr_status, curr_group, curr_sig_alg, curr_sig_pqc))
+        domain_updates.append((curr_status, curr_group, curr_sig_alg, domain_id))
 
         # Check for drift
         drift_reasons = []
@@ -168,6 +160,21 @@ async def _internal_run_monitor_check():
             }
             await send_drift_alert(webhook_url, alert_payload)
             alerts_triggered += 1
+
+    # Insert history in batch
+    if history_inserts:
+        cursor.executemany("""
+            INSERT INTO audit_history (domain_id, status, "group", leaf_signature_algorithm, signature_pqc_status)
+            VALUES (?, ?, ?, ?, ?)
+        """, history_inserts)
+
+    # Update monitored domains in batch
+    if domain_updates:
+        cursor.executemany("""
+            UPDATE monitored_domains
+            SET last_status = ?, last_group = ?, last_signature_algorithm = ?, last_scanned_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, domain_updates)
 
     conn.commit()
     conn.close()
