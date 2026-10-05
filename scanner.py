@@ -141,8 +141,8 @@ def audit_host(hostname: str, port: int = 443, timeout: float = 4.0) -> dict:
 
     # Certificate Chain Retrieval
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
 
     leaf_signature_algorithm = "Unknown"
     leaf_key_type = "Unknown"
