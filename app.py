@@ -84,17 +84,45 @@ def get_monitor_targets():
     """)
     rows = cursor.fetchall()
 
-    # Also fetch recent history for each
+    if not rows:
+        conn.close()
+        return []
+
+    active_ids = [row["id"] for row in rows]
+    history_by_domain = {id_: [] for id_ in active_ids}
+
+    chunk_size = 900
+    for i in range(0, len(active_ids), chunk_size):
+        chunk = active_ids[i:i + chunk_size]
+        placeholders = ",".join("?" * len(chunk))
+
+        cursor.execute(f"""
+            SELECT domain_id, status, "group", leaf_signature_algorithm, signature_pqc_status, timestamp
+            FROM (
+                SELECT domain_id, status, "group", leaf_signature_algorithm, signature_pqc_status, timestamp,
+                       ROW_NUMBER() OVER (PARTITION BY domain_id ORDER BY timestamp DESC) as rn
+                FROM audit_history
+                WHERE domain_id IN ({placeholders})
+            )
+            WHERE rn <= 5
+            ORDER BY timestamp DESC
+        """, chunk)
+
+        for h_row in cursor.fetchall():
+            d_id = h_row["domain_id"]
+            h_dict = {
+                "status": h_row["status"],
+                "group": h_row["group"],
+                "leaf_signature_algorithm": h_row["leaf_signature_algorithm"],
+                "signature_pqc_status": h_row["signature_pqc_status"],
+                "timestamp": h_row["timestamp"]
+            }
+            history_by_domain[d_id].append(h_dict)
+
     targets = []
     for row in rows:
         target = dict(row)
-        cursor.execute("""
-            SELECT status, "group", leaf_signature_algorithm, signature_pqc_status, timestamp
-            FROM audit_history
-            WHERE domain_id = ?
-            ORDER BY timestamp DESC LIMIT 5
-        """, (target["id"],))
-        target["history"] = [dict(h) for h in cursor.fetchall()]
+        target["history"] = history_by_domain[target["id"]]
         targets.append(target)
 
     conn.close()
