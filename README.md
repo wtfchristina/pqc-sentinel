@@ -1,31 +1,21 @@
-# PQC Sentinel
+# PQC-Sentinel
 
-[![CI](https://github.com/wtfchristina/pqc-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/wtfchristina/pqc-sentinel/actions)
-![Release](https://img.shields.io/github/v/release/wtfchristina/pqc-sentinel)
-![NIST](https://img.shields.io/badge/NIST-FIPS%20203%20ML--KEM-blue)
+Post-Quantum Cryptographic compliance auditor and line-rate telemetry block sealer adhering to NIST FIPS 203/204/205 and NSA CNSA 2.0 standards.
 
-**PQC Sentinel** is a domain-level audit platform and API designed to detect Post-Quantum Cryptography (PQC) readiness. It performs TLS 1.3 ClientHello negotiations with hybrid post-quantum key encapsulation mechanisms (ML-KEM-768 / X25519) to detect compliance with **NIST FIPS 203** and mitigate "Harvest Now, Decrypt Later" (HNDL) exposure.
+## Capabilities
 
-## Features
+* **AST & Binary Scanner:** Automated static discovery of deprecated public-key cryptography (RSA, ECDSA, ECDH) and legacy hash functions across enterprise repositories.
+* **FIPS 204 Block Sealer:** Digital signature encapsulation using module-lattice-based algorithms with HMAC-SHA3-512 authentication.
+* **Zeroization Harness:** Assembly-level verification ensuring ephemeral secret keys and intermediate states are completely scrubbed from memory after sealing.
 
-- **TLS 1.3 PQC Engine**: Evaluates whether remote hosts negotiate hybrid post-quantum groups (`X25519MLKEM768`).
-- **Interactive UI**: Real-time status cards (SECURE vs. VULNERABLE).
-- **CycloneDX CBOM Export**: Exports machine-readable Cryptographic Bill of Materials (CBOM) in JSON format.
-- **Executive Audit PDF**: Generates downloadable 1-page compliance summaries via ReportLab.
-- **Container Ready**: Built for cloud deployment via a lightweight multi-stage Docker container.
+## Verification & Auditing
 
-## Local Quickstart
-
+Run the standalone compliance scan:
 ```bash
-# Clone and enter repo
-git clone [https://github.com/wtfchristina/pqc-sentinel.git](https://github.com/wtfchristina/pqc-sentinel.git)
-cd pqc-sentinel
+python3 tools/audit/pqc_scanner.py . --output audit_report.json
+```
 
-# Setup environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Run server
-python -m uvicorn app:app --reload
-python -m pytest
+Run cryptographic tests:
+```bash
+python3 -m unittest discover -s tests -p "test_*.py"
+```
